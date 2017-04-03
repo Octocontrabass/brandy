@@ -9,6 +9,7 @@ Brandy can:
  * Analyze encrypted files to determine the product code
  * Create new activation keys from serial number/product code pairs
  * Verify serial number/activation key pairs and extract the product code
+ * Decrypt encrypted programs (without branding them)
  * ~~Make Xenix stop crashing so much~~
  * Maybe other things, later.
 

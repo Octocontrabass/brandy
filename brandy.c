@@ -1,8 +1,20 @@
 #include <inttypes.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "enigma.h"
+
+void * checked_malloc( size_t size )
+{
+    void * temp = malloc( size );
+    if( !temp )
+    {
+        fprintf( stderr, "Failed to allocate %zu bytes.\n", size );
+        exit( 0 );
+    }
+    return temp;
+}
 
 static void keyencrypt( uint8_t * const key )
 {
@@ -68,11 +80,13 @@ int main( const int argc, const char * const * const argv )
     {
         fprintf( stdout, "Usage: %s [function] [arguments]\n\n"
         "Functions:\n"
-        //"    brand ---- (todo)\n"
-        "    crack ---- Find the product code from an encrypted file.\n"
-        //"    debrand -- (todo)\n"
-        "    generate - Create an activation key\n"
-        "    verify --- Check a serial number/activation key combination.\n",
+        //"    brand ----- (todo)\n"
+        "    crack ----- Find the product code from an encrypted file.\n"
+        //"    debrand --- (todo)\n"
+        //"    encrypt --- Encrypt a file, without debranding it.\n"
+        "    generate -- Create an activation key.\n"
+        "    unencrypt - Decrypt a file, without branding it.\n"
+        "    verify ---- Check a serial number/activation key combination.\n",
         argv[0] );
         return 0;
     }
@@ -115,7 +129,7 @@ int main( const int argc, const char * const * const argv )
                     {
                         for( uint8_t k = 'a'; k <= 'z'; k++ )
                         {
-                            uint8_t product[5] = {i, j, k, 'T', 'b'};
+                            uint8_t product[5] = { i, j, k, 'T', 'b' };
                             maketables( product );
                             enigma( in, out, 0x100 );
                             if( sum( out, 0x100 ) == checksum )
@@ -163,13 +177,99 @@ int main( const int argc, const char * const * const argv )
                 fprintf( stdout, "Activation key: %s\n", &key[9] );
             }
             return 0;
+        case 'U':
+        case 'u':
+            if( argc != 5 )
+            {
+                fprintf( stdout, "Usage: %s unencrypt [key] [input] [output]\n\n"
+                "Decrypt an encrypted file without branding it, using either an activation key\n"
+                "or a product code.\n",
+                argv[0] );
+                return 0;
+            }
+            {
+                uint8_t * in;
+                uint8_t * out;
+                FILE * infile;
+                FILE * outfile;
+                uint8_t product[5] = { 0, 0, 0, 'T', 'b' };
+                uint16_t checksum;
+                uint32_t size;
+                if( strlen( argv[2] ) == 3 )
+                {
+                    for( size_t i = 0; i < 3; i++ )
+                    {
+                        if( !islower( argv[2][i] ) )
+                        {
+                            fprintf( stderr, "Product codes are always lowercase.\n" );
+                            return 0;
+                        }
+                    }
+                    memcpy( product, argv[2], 3 );
+                }
+                else if( strlen( argv[2] ) == 8 )
+                {
+                    for( size_t i = 0; i < 8; i++ )
+                    {
+                        if( !islower( argv[2][i] ) )
+                        {
+                            fprintf( stderr, "Activation keys are always lowercase.\n" );
+                            return 0;
+                        }
+                    }
+                    memcpy( product, argv[2], 3 );
+                    uint8_t key[8];
+                    memcpy( key, argv[2], 8 );
+                    keydecrypt( key );
+                    memcpy( product, key, 3 );
+                }
+                else
+                {
+                    fprintf( stderr, "Activation keys are always 8 letters. Product codes are always 3 letters.\n" );
+                    return 0;
+                }
+                infile = fopen( argv[3], "rb" );
+                if( !infile )
+                {
+                    fprintf( stderr, "Can't open file: %s\n", argv[3] );
+                    return 0;
+                }
+                outfile = fopen( argv[4], "wb" );
+                if( !outfile )
+                {
+                    fprintf( stderr, "Can't open file: %s\n", argv[4] );
+                    return 0;
+                }
+                in = checked_malloc( 0x100 );
+                fread( in, 0x100, 1, infile );
+                if( in[0xff] != 0x84 )
+                {
+                    fprintf( stderr, "File is not encrypted: %s\n", argv[3] );
+                    return 0;
+                }
+                checksum = (uint16_t)in[0xfd] << 8 | in[0xfe];
+                size = (uint32_t)in[0xf9] << 24 | (uint32_t)in[0xfa] << 16 |
+                    (uint32_t)in[0xfb] << 8 | in[0xfc];
+                free( in );
+                in = checked_malloc( size );
+                out = checked_malloc( size );
+                maketables( product );
+                fread( in, size, 1, infile );
+                enigma( in, out, size );
+                if( sum( out, 0x100 ) != checksum )
+                {
+                    fprintf( stdout, "Checksum doesn't match!\n" );
+                }
+                fwrite( out, size, 1, outfile );
+            }
+            return 0;
         case 'V':
         case 'v':
             if( argc != 4 )
             {
                 fprintf( stdout, "Usage: %s verify [serial] [key]\n\n"
                 "Find out if a serial number/activation key combination is valid, and see the\n"
-                "product code it contains.",
+                "product code it contains.\n",
                 argv[0] );
                 return 0;
             }
