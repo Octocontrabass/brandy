@@ -67,7 +67,7 @@ static uint16_t sum( const uint8_t * const data, size_t count )
 
 static void keysum( const uint8_t * const key, uint8_t * const charsum )
 {
-    uint16_t checksum = sum( key, 15 ); 
+    uint16_t checksum = sum( key, 15 );
     checksum = (checksum << (key[8] & 0xf)) | (checksum >> (-key[8] & 0xf));
     charsum[1] = (checksum % 26) + 'a';
     charsum[0] = ((checksum / 26) % 26) + 'a';
@@ -83,7 +83,7 @@ int main( const int argc, const char * const * const argv )
         //"    brand ----- (todo)\n"
         "    crack ----- Find the product code from an encrypted file.\n"
         //"    debrand --- (todo)\n"
-        //"    encrypt --- Encrypt a file, without debranding it.\n"
+        "    encrypt --- Encrypt a file, without debranding it.\n"
         "    generate -- Create an activation key.\n"
         "    unencrypt - Decrypt a file, without branding it.\n"
         "    verify ---- Check a serial number/activation key combination.\n",
@@ -142,6 +142,105 @@ int main( const int argc, const char * const * const argv )
                 }
             }
             fprintf( stdout, "\n" );
+            return 0;
+        case 'E':
+        case 'e':
+            if( argc != 5 )
+            {
+                fprintf( stdout, "Usage: %s encrypt [key] [input] [output]\n\n"
+                "Encrypt a file without debranding it, using either an activation key or a\n"
+                "product code.\n",
+                argv[0] );
+                return 0;
+            }
+            {
+                uint8_t * in;
+                uint8_t * out;
+                FILE * infile;
+                FILE * outfile;
+                uint8_t product[5] = { 0, 0, 0, 'T', 'b' };
+                uint16_t checksum;
+                uint32_t size;
+                if( strlen( argv[2] ) == 3 )
+                {
+                    for( size_t i = 0; i < 3; i++ )
+                    {
+                        if( !islower( argv[2][i] ) )
+                        {
+                            fprintf( stderr, "Product codes are always lowercase.\n" );
+                            return 0;
+                        }
+                    }
+                    memcpy( product, argv[2], 3 );
+                }
+                else if( strlen( argv[2] ) == 8 )
+                {
+                    for( size_t i = 0; i < 8; i++ )
+                    {
+                        if( !islower( argv[2][i] ) )
+                        {
+                            fprintf( stderr, "Activation keys are always lowercase.\n" );
+                            return 0;
+                        }
+                    }
+                    uint8_t key[8];
+                    memcpy( key, argv[2], 8 );
+                    keydecrypt( key );
+                    memcpy( product, key, 3 );
+                }
+                else
+                {
+                    fprintf( stderr, "Activation keys are always 8 letters. Product codes are always 3 letters.\n" );
+                    return 0;
+                }
+                infile = fopen( argv[3], "rb" );
+                if( !infile )
+                {
+                    fprintf( stderr, "Can't open file: %s\n", argv[3] );
+                    return 0;
+                }
+
+                outfile = fopen( argv[4], "wb" );
+                if( !outfile )
+                {
+                    fprintf( stderr, "Can't open file: %s\n", argv[4] );
+                    return 0;
+                }
+                fseek( infile, 0, SEEK_END );
+                size = ftell( infile );
+                fseek( infile, 0, SEEK_SET );
+                if( size < 0x100 )
+                {
+                    in = checked_malloc( 0x100 );
+                    memset( in, 0, 0x100 );
+                    out = checked_malloc( 0x200 );
+                }
+                else
+                {
+                    in = checked_malloc( size );
+                    out = checked_malloc( size + 0x100 );
+                }
+                memset( out, 0, 0x100 );
+                {
+                    uint8_t * temp = "echo 'This program is encrypted. You need to decrypt it before use.'; "
+                    "echo 'https://github.com/Octocontrabass/brandy'; "
+                    "exit 1\n";
+                    memcpy( out, temp, strlen( temp ) );
+                }
+                fread( in, size, 1, infile );
+                checksum = sum( in, 0x100 );
+                out[0xf9] = size >> 24;
+                out[0xfa] = size >> 16;
+                out[0xfb] = size >> 8;
+                out[0xfc] = size;
+                out[0xfd] = checksum >> 8;
+                out[0xfe] = checksum;
+                out[0xff] = 0x84;
+                maketables( product );
+                if( size < 0x100 ) size = 0x100;
+                enigma( in, out + 0x100, size );
+                fwrite( out, size + 0x100, 1, outfile );
+            }
             return 0;
         case 'G':
         case 'g':
@@ -217,7 +316,6 @@ int main( const int argc, const char * const * const argv )
                             return 0;
                         }
                     }
-                    memcpy( product, argv[2], 3 );
                     uint8_t key[8];
                     memcpy( key, argv[2], 8 );
                     keydecrypt( key );
