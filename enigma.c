@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stddef.h>
 #include "enigma.h"
 
 static uint8_t a[0x100];
